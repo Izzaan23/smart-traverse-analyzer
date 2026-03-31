@@ -20,14 +20,16 @@ start_e = col2.number_input("Koordinat Mula (Timur / E)", value=1000.000, format
 st.header("2. Data Cerapan (Bearing & Jarak)")
 st.info("Sila masukkan data traverse anda di dalam jadual di bawah. Tambah baris baru jika perlu.")
 
+# Data default dikemaskini berdasarkan gambar & bermula dari stesen 2-3
 default_data = pd.DataFrame({
-    "Garisan": ["1-2", "2-3", "3-4", "4-1"],
-    "Darjah": [45, 135, 225, 315],
-    "Minit": [0, 0, 0, 0],
-    "Saat": [0, 0, 0, 0],
+    "Garisan": ["2-3", "3-4", "4-1", "1-2"],
+    "Darjah": [135, 225, 315, 45],
+    "Minit": [21, 1, 47, 54],
+    "Saat": [21, 1, 45, 21],
     "Jarak (m)": [100.0, 100.0, 100.0, 100.0]
 })
 
+# Gunakan st.data_editor untuk membolehkan pengguna edit data secara terus di web
 edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=True)
 
 # --- BAHAGIAN 3: PENGIRAAN & PROSES ---
@@ -58,7 +60,6 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         # --- PENGIRAAN NISBAH TIKAIAN (1 : X) ---
         if misclosure > 0:
             ratio_val = sum_jarak / misclosure
-            # Dibundarkan kepada nombor bulat terdekat
             misclosure_ratio = f"1 : {int(round(ratio_val))}"
         else:
             misclosure_ratio = "1 : 0 (Sempurna)"
@@ -105,17 +106,15 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        # Supaya poligon nampak tertutup, kita sambung koordinat akhir ke koordinat asal
         plot_e = e_coords + [e_coords[0]]
         plot_n = n_coords + [n_coords[0]]
         
         ax.plot(plot_e, plot_n, marker='o', linestyle='-', color='b', linewidth=2, markersize=6)
         
-        # Labelkan setiap stesen
+        # Labelkan stesen (mengikut susunan data input)
+        stn_labels = [g.split('-')[0] for g in df['Garisan']]
         for i, (txt_e, txt_n) in enumerate(zip(e_coords, n_coords)):
-            # Jika titik terakhir sama dengan titik pertama, kita label sekali sahaja
-            if i < len(e_coords) - 1 or i == 0:
-                ax.annotate(f"Stn {i+1}", (txt_e, txt_n), textcoords="offset points", xytext=(5,5), ha='center')
+            ax.annotate(f"Stn {stn_labels[i]}", (txt_e, txt_n), textcoords="offset points", xytext=(5,5), ha='center')
             
         ax.set_title("Plot Poligon Tertutup (Laras)")
         ax.set_xlabel("Timur (E)")
