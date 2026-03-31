@@ -20,7 +20,6 @@ start_e = col2.number_input("Koordinat Mula (Timur / E)", value=1000.000, format
 st.header("2. Data Cerapan (Bearing & Jarak)")
 st.info("Sila masukkan data traverse anda di dalam jadual di bawah. Tambah baris baru jika perlu.")
 
-# Data default dikemaskini berdasarkan gambar & bermula dari stesen 2-3
 default_data = pd.DataFrame({
     "Garisan": ["2-3", "3-4", "4-1", "1-2"],
     "Darjah": [135, 225, 315, 45],
@@ -29,12 +28,10 @@ default_data = pd.DataFrame({
     "Jarak (m)": [100.0, 100.0, 100.0, 100.0]
 })
 
-# Gunakan st.data_editor untuk membolehkan pengguna edit data secara terus di web
 edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width=True)
 
 # --- BAHAGIAN 3: PENGIRAAN & PROSES ---
 if st.button("Kira Traverse & Jana Pelan", type="primary"):
-    # Pembersihan data
     df = edited_df.dropna(subset=['Darjah', 'Minit', 'Saat', 'Jarak (m)']).copy()
     cols_to_fix = ['Darjah', 'Minit', 'Saat', 'Jarak (m)']
     for col in cols_to_fix:
@@ -46,18 +43,19 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         df['Decimal_Deg'] = df['Darjah'] + (df['Minit'] / 60) + (df['Saat'] / 3600)
         df['Radians'] = np.radians(df['Decimal_Deg'].astype(float))
         
-        # 2. Kira Latit (N/S) dan Dipat (E/W)
-        df['Latit'] = df['Jarak (m)'] * np.cos(df['Radians'])
-        df['Dipat'] = df['Jarak (m)'] * np.sin(df['Radians'])
+        # 2. Kira Latit & Dipat (Dibundarkan ke 3 tempat perpuluhan untuk ikut gaya manual)
+        df['Latit'] = (df['Jarak (m)'] * np.cos(df['Radians'])).round(3)
+        df['Dipat'] = (df['Jarak (m)'] * np.sin(df['Radians'])).round(3)
         
-        # Kira Tikaian Lurus (Misclosure)
+        # Kira Jumlah Tikaian
         sum_latit = df['Latit'].sum()
         sum_dipat = df['Dipat'].sum()
         sum_jarak = df['Jarak (m)'].sum()
         
+        # Misclosure (Tikaian Lurus)
         misclosure = math.sqrt(sum_latit**2 + sum_dipat**2)
         
-        # --- PENGIRAAN NISBAH TIKAIAN (1 : X) ---
+        # --- PENGIRAAN NISBAH TIKAIAN 1 : X ---
         if misclosure > 0:
             ratio_val = sum_jarak / misclosure
             misclosure_ratio = f"1 : {int(round(ratio_val))}"
@@ -65,8 +63,9 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
             misclosure_ratio = "1 : 0 (Sempurna)"
         
         # 3. Pelarasan Bowditch
-        df['Koreksi_Latit'] = -(sum_latit * (df['Jarak (m)'] / sum_jarak))
-        df['Koreksi_Dipat'] = -(sum_dipat * (df['Jarak (m)'] / sum_jarak))
+        # Formula: -(Jumlah Tikaian / Jumlah Jarak) * Jarak Garisan
+        df['Koreksi_Latit'] = (-(sum_latit / sum_jarak) * df['Jarak (m)']).round(3)
+        df['Koreksi_Dipat'] = (-(sum_dipat / sum_jarak) * df['Jarak (m)']).round(3)
         
         df['Latit_Laras'] = df['Latit'] + df['Koreksi_Latit']
         df['Dipat_Laras'] = df['Dipat'] + df['Koreksi_Dipat']
@@ -76,8 +75,8 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         e_coords = [start_e]
         
         for i in range(len(df)):
-            n_coords.append(n_coords[-1] + df['Latit_Laras'].iloc[i])
-            e_coords.append(e_coords[-1] + df['Dipat_Laras'].iloc[i])
+            n_coords.append(round(n_coords[-1] + df['Latit_Laras'].iloc[i], 3))
+            e_coords.append(round(e_coords[-1] + df['Dipat_Laras'].iloc[i], 3))
             
         df['Koordinat N'] = n_coords[1:]
         df['Koordinat E'] = e_coords[1:]
@@ -93,7 +92,7 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         
         col_res1, col_res2, col_res3, col_res4 = st.columns(4)
         col_res1.metric("Jumlah Jarak", f"{sum_jarak:.3f} m")
-        col_res2.metric("Tikaian Lurus", f"{misclosure:.4f} m")
+        col_res2.metric("Tikaian Lurus (e)", f"{misclosure:.4f} m")
         col_res3.metric("Nisbah Tikaian", misclosure_ratio)
         col_res4.metric("Keluasan", f"{area:.3f} m²")
         
@@ -101,18 +100,20 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         display_df = df[['Garisan', 'Jarak (m)', 'Latit', 'Dipat', 'Latit_Laras', 'Dipat_Laras', 'Koordinat N', 'Koordinat E']]
         st.dataframe(display_df.style.format(precision=3), use_container_width=True)
         
-        # --- BAHAGIAN 5: PLOT VISUAL (PEMBETULAN POLIGON) ---
+        # --- BAHAGIAN 5: PLOT VISUAL ---
         st.subheader("4. Pelan Plot Traverse")
-        
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        plot_e = e_coords + [e_coords[0]]
-        plot_n = n_coords + [n_coords[0]]
+        plot_e = e_coords
+        plot_n = n_coords
         
         ax.plot(plot_e, plot_n, marker='o', linestyle='-', color='b', linewidth=2, markersize=6)
         
-        # Labelkan stesen (mengikut susunan data input)
+        # Labelkan stesen (Pembaikan ralat IndexError)
+        # Ambil stesen mula dari setiap garisan, dan tambah stesen akhir untuk titik penutup
         stn_labels = [g.split('-')[0] for g in df['Garisan']]
+        stn_labels.append(df['Garisan'].iloc[-1].split('-')[1]) # Tambah stesen penutup
+        
         for i, (txt_e, txt_n) in enumerate(zip(e_coords, n_coords)):
             ax.annotate(f"Stn {stn_labels[i]}", (txt_e, txt_n), textcoords="offset points", xytext=(5,5), ha='center')
             
@@ -121,24 +122,21 @@ if st.button("Kira Traverse & Jana Pelan", type="primary"):
         ax.set_ylabel("Utara (N)")
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.set_aspect('equal')
-        
         st.pyplot(fig)
         
         # --- BAHAGIAN 6: EKSPORT DATA ---
         st.subheader("5. Muat Turun Data")
-        
         geojson_data = {
             "type": "FeatureCollection",
             "features": [{
                 "type": "Feature",
                 "geometry": {
                     "type": "Polygon",
-                    "coordinates": [[[e, n] for e, n in zip(plot_e, plot_n)]]
+                    "coordinates": [[ [e, n] for e, n in zip(plot_e, plot_n) ]]
                 },
                 "properties": {"name": "Traverse Plot", "area_sqm": area, "misclosure_ratio": misclosure_ratio}
             }]
         }
-        
         json_string = json.dumps(geojson_data)
         csv_string = display_df.to_csv(index=False).encode('utf-8')
         
