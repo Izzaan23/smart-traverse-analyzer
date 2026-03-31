@@ -34,7 +34,56 @@ edited_df = st.data_editor(default_data, num_rows="dynamic", use_container_width
 
 # --- BAHAGIAN 3: PENGIRAAN & PROSES ---
 if st.button("Kira Traverse & Jana Pelan", type="primary"):
-    df = edited_df.copy()
+    # Buat salinan data dan buang baris yang kosong (dropna)
+    df = edited_df.dropna(subset=['Darjah', 'Minit', 'Saat', 'Jarak (m)']).copy()
+    
+    # Pastikan semua data adalah jenis nombor (float) untuk elakkan ralat NumPy
+    cols_to_fix = ['Darjah', 'Minit', 'Saat', 'Jarak (m)']
+    for col in cols_to_fix:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Buang baris yang gagal ditukar ke nombor
+    df = df.dropna(subset=cols_to_fix)
+
+    if not df.empty:
+        # 1. Tukar Bearing ke Decimal Degrees & Radians
+        df['Decimal_Deg'] = df['Darjah'] + (df['Minit'] / 60) + (df['Saat'] / 3600)
+        df['Radians'] = np.radians(df['Decimal_Deg'].astype(float)) # Paksa jadi float
+        
+        # 2. Kira Latit (N/S) dan Dipat (E/W)
+        df['Latit'] = df['Jarak (m)'] * np.cos(df['Radians'])
+        df['Dipat'] = df['Jarak (m)'] * np.sin(df['Radians'])
+        
+        # Kira Tikaian Lurus (Misclosure)
+        sum_latit = df['Latit'].sum()
+        sum_dipat = df['Dipat'].sum()
+        sum_jarak = df['Jarak (m)'].sum()
+        
+        misclosure = math.sqrt(sum_latit**2 + sum_dipat**2)
+        
+        # 3. Pelarasan Bowditch
+        df['Koreksi_Latit'] = -(sum_latit * (df['Jarak (m)'] / sum_jarak))
+        df['Koreksi_Dipat'] = -(sum_dipat * (df['Jarak (m)'] / sum_jarak))
+        
+        df['Latit_Laras'] = df['Latit'] + df['Koreksi_Latit']
+        df['Dipat_Laras'] = df['Dipat'] + df['Koreksi_Dipat']
+        
+        # 4. Kira Koordinat Berlaras
+        n_coords = [start_n]
+        e_coords = [start_e]
+        
+        for i in range(len(df)):
+            n_coords.append(n_coords[-1] + df['Latit_Laras'].iloc[i])
+            e_coords.append(e_coords[-1] + df['Dipat_Laras'].iloc[i])
+            
+        # 5. Kira Keluasan (Shoelace)
+        x = np.array(e_coords)
+        y = np.array(n_coords)
+        area = 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+        # (Teruskan dengan Bahagian 4: Paparan Hasil seperti kod asal...)
+    else:
+        st.error("Tiada data sah dijumpai. Sila pastikan semua ruangan diisi dengan nombor.")
     
     # 1. Tukar Bearing ke Decimal Degrees & Radians
     df['Decimal_Deg'] = df['Darjah'] + (df['Minit'] / 60) + (df['Saat'] / 3600)
